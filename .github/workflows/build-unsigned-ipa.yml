@@ -1,0 +1,30 @@
+# Added by Ethan's setup (2026-10-24, PR 6 patch step added same day), NOT part of wesbos/3d-model-anything. UNTESTED.
+# Builds the iPhone/iPad app unsigned on a free GitHub macOS runner. Sideloadly signs it later
+# with a free Apple ID. Run it from the Actions tab of YOUR fork (Run workflow button).
+name: Build unsigned IPA
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: macos-26   # code uses iOS 26 APIs, so needs Xcode 26+
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+      - name: Apply upstream PR #6 (fixes CoverageEngine.swift type-check timeout on Xcode 26.6) unless already merged
+        run: |
+          curl -sfL https://patch-diff.githubusercontent.com/raw/wesbos/3d-model-anything/pull/6.diff -o pr6.diff
+          if git apply --check pr6.diff; then git apply pr6.diff; else echo "PR 6 already in or no longer applies"; fi
+      - run: brew install xcodegen
+      - name: Build
+        working-directory: apps/house-capture
+        run: |
+          xcodegen generate
+          xcodebuild -project HouseCapture.xcodeproj -scheme HouseCapture -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/HouseCapture.app Payload/
+          zip -qr HouseCapture-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HouseCapture-unsigned-ipa
+          path: apps/house-capture/HouseCapture-unsigned.ipa
